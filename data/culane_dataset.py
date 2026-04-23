@@ -26,6 +26,7 @@ class CULaneDataset(Dataset):
         S=72,
         max_lanes=4,
         augment=True,
+        ego_only=False,   # if True, keep only left+right ego lanes
     ):
         self.data_root = data_root
         self.img_h     = img_h
@@ -33,6 +34,7 @@ class CULaneDataset(Dataset):
         self.S         = S
         self.max_lanes = max_lanes
         self.augment   = augment and (split == 'train')
+        self.ego_only  = ego_only
 
         list_files = {
             'train': 'list/train_gt.txt',
@@ -113,7 +115,22 @@ class CULaneDataset(Dataset):
                           if 0 <= x <= orig_w and 0 <= y <= orig_h]
                 if len(coords) >= 2:
                     lanes.append(coords)
+        if self.ego_only:
+            lanes = self._pick_ego_lanes(lanes, orig_w)
         return lanes[:self.max_lanes]
+
+    def _pick_ego_lanes(self, lanes, orig_w):
+        """Keep only left+right ego lanes closest to image center."""
+        if len(lanes) <= 2:
+            return lanes
+        center = orig_w / 2
+        def bx(lane): return lane[-1][0] if lane else 0.0
+        left  = [(i, bx(l)) for i, l in enumerate(lanes) if bx(l) <= center]
+        right = [(i, bx(l)) for i, l in enumerate(lanes) if bx(l) > center]
+        sel = []
+        if left:  sel.append(lanes[max(left,  key=lambda t: t[1])[0]])
+        if right: sel.append(lanes[min(right, key=lambda t: t[1])[0]])
+        return sel if sel else lanes[:2]
 
     def _encode_lanes(self, lanes):
         """
@@ -174,9 +191,16 @@ class CULaneDataset(Dataset):
 
         # brightness / contrast jitter
         if random.random() < 0.5:
-            alpha = random.uniform(0.6, 1.4)  # contrast
-            beta  = random.randint(-30, 30)    # brightness
+            alpha = random.uniform(0.6, 1.4)
+            beta  = random.randint(-30, 30)
             img   = np.clip(img.astype(np.float32) * alpha + beta, 0, 255).astype(np.uint8)
+
+        # color jitter (hue + saturation) — LaneATT style
+        if random.random() < 0.5:
+            img_hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV).astype(np.float32)
+            img_hsv[:,:,0] = (img_hsv[:,:,0] + random.uniform(-18, 18)) % 180
+            img_hsv[:,:,1] = np.clip(img_hsv[:,:,1] * random.uniform(0.5, 1.5), 0, 255)
+            img = cv2.cvtColor(img_hsv.astype(np.uint8), cv2.COLOR_HSV2RGB)
 
         # shadow simulation
         if random.random() < 0.4:
@@ -185,6 +209,20 @@ class CULaneDataset(Dataset):
             pts     = np.array([[x1, 0], [x2, orig_h], [0, orig_h], [0, 0]], np.int32)
             cv2.fillPoly(shadow, [pts], (random.uniform(0.4, 0.7),) * 3)
             img = np.clip(img.astype(np.float32) * shadow, 0, 255).astype(np.uint8)
+
+        # CutOut — randomly mask patches (LaneATT key augmentation)
+        if random.random() < 0.5:
+            n_holes = random.randint(1, 3)
+            for _ in range(n_holes):
+                cut_w = random.randint(orig_w // 8, orig_w // 4)
+                cut_h = random.randint(orig_h // 8, orig_h // 4)
+                cx    = random.randint(0, orig_w)
+                cy    = random.randint(0, orig_h)
+                x1c   = max(0, cx - cut_w // 2)
+                y1c   = max(0, cy - cut_h // 2)
+                x2c   = min(orig_w, cx + cut_w // 2)
+                y2c   = min(orig_h, cy + cut_h // 2)
+                img[y1c:y2c, x1c:x2c] = 0
 
         # perspective transform
         if random.random() < 0.3:

@@ -54,6 +54,8 @@ def parse_args():
     p.add_argument('--cls_weight',     type=float, default=1.5)
     p.add_argument('--reg_weight',     type=float, default=1.5)
     p.add_argument('--neg_pos_ratio',  type=int,   default=3)
+    p.add_argument('--ego_only',       action='store_true',
+                   help='Fine-tune on ego lanes only')
     p.add_argument('--min_f1',         type=float, default=0.05)
     p.add_argument('--patience',       type=int,   default=8)
     p.add_argument('--eval_conf',      type=float, default=0.3)
@@ -108,14 +110,18 @@ def proper_f1(model, val_samples, device, img_h, img_w, S,
             pred_lanes = [p[5:].cpu().numpy() for p in proposals_list[0][0]
                           if (p[5:].cpu().numpy() > 0).sum() >= 2]
 
-            # load GT from target encoded in dataset
+            # load GT — scale from original resolution to model input size
             label = img_path.replace('.jpg', '.lines.txt')
+            orig_h, orig_w = cv2.imread(img_path).shape[:2]
+            sx = img_w / orig_w
+            sy = img_h / orig_h
             gt_lanes_raw = []
             if os.path.exists(label):
                 with open(label) as f:
                     for line in f:
                         nums = list(map(float, line.strip().split()))
-                        pts  = [(nums[i], nums[i+1]) for i in range(0, len(nums)-1, 2)]
+                        pts  = [(nums[i]*sx, nums[i+1]*sy) for i in range(0, len(nums)-1, 2)]
+                        pts  = [(x,y) for x,y in pts if 0<=x<=img_w and 0<=y<=img_h]
                         if len(pts) >= 2: gt_lanes_raw.append(pts)
 
             # encode GT to anchor xs
@@ -124,8 +130,12 @@ def proper_f1(model, val_samples, device, img_h, img_w, S,
                 ys_gt = np.array([p[1] for p in pts])
                 xs_gt = np.array([p[0] for p in pts])
                 order = np.argsort(ys_gt)
-                xs_interp = np.interp(anchor_ys, ys_gt[order], xs_gt[order],
-                                      left=-1., right=-1.)
+                ys_sorted = ys_gt[order]
+                xs_sorted = xs_gt[order]
+                # anchor_ys is descending (bottom→top), np.interp needs ascending xp
+                # so flip anchor_ys and then flip result back
+                xs_interp = np.interp(anchor_ys[::-1], ys_sorted, xs_sorted,
+                                      left=-1., right=-1.)[::-1]
                 valid = (xs_interp >= 0) & (xs_interp <= img_w)
                 if valid.sum() >= 2:
                     xs_out = np.zeros(S)
@@ -231,10 +241,12 @@ def main():
     # datasets
     train_ds = CULaneDataset(args.data_root, split='train',
                              img_h=args.img_h, img_w=args.img_w,
-                             S=args.S, augment=True)
+                             S=args.S, augment=True,
+                             ego_only=args.ego_only)
     val_ds   = CULaneDataset(args.data_root, split='val',
                              img_h=args.img_h, img_w=args.img_w,
-                             S=args.S, augment=False)
+                             S=args.S, augment=False,
+                             ego_only=args.ego_only)
     print(f"Train  : {len(train_ds):,}  |  Val: {len(val_ds):,}")
 
     # val image paths for proper eval
