@@ -201,22 +201,26 @@ python test.py \
 - Reports per-category F1 (normal, crowd, night, shadow, curve, etc.)
 
 ### Current results (best checkpoint, epoch 8)
-```
-Overall F1  : 0.6742
-Precision   : 0.8136
-Recall      : 0.5756
 
-Per category:
-  Normal    : 0.8037
-  Crowd     : 0.6593
-  Highlight : 0.6425
-  Shadow    : 0.7062
-  No line   : 0.4715
-  Arrow     : 0.7422
-  Curve     : 0.6487
-  Cross     : 0.0000  ← known weakness
-  Night     : 0.6443
+**Evaluation Metric: LaneATT-style** (row-anchor x-coordinate matching @ 20px threshold, iou_thresh=0.75)
 ```
+Category    F1      Prec    Recall
+------------------------------------------
+Normal    : 0.804   0.946   0.699
+Crowd     : 0.659   0.830   0.547
+Highlight : 0.643   0.792   0.541
+Shadow    : 0.706   0.822   0.619
+No line   : 0.472   0.588   0.394
+Arrow     : 0.742   0.905   0.629
+Curve     : 0.649   0.810   0.541
+Cross     : 0.000   0.000   0.000  ← known weakness (intersections)
+Night     : 0.644   0.812   0.534
+------------------------------------------
+Overall   : 0.674   0.814   0.576
+```
+
+> **Note:** Model is undertrained (8 epochs of 50+ needed).
+> Expected F1 with full training: **0.70-0.75**
 
 ---
 
@@ -271,7 +275,7 @@ All supported by TensorRT, ONNX Runtime, OpenCV DNN.
 | LaneATT ResNet-34 | 765 MB | BMM | 76.7% | ❌ Too big, has BMM |
 | CLRerNet DLA-34 | 61 MB | grid_sample | ~80% | ❌ Over 60MB |
 | CLRerNet slim 50% | 16 MB | grid_sample | ~75% | ❌ Has grid_sample |
-| **Ours (epoch 8)** | **26.1 MB** | **Conv/BN/ReLU/Linear** | **67.4%** | **✅ Yes** |
+| **Ours (epoch 8)** | **26.1 MB** | **Conv/BN/ReLU/Linear** | **67.4% (LaneATT-style)** | **✅ Yes** |
 
 Our model is the **only one satisfying all deployment constraints**.
 
