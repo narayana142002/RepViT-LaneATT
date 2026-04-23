@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Model checkpoints
+work_dirs/
+*.pth
+*.pt
+*.onnx
+
+# Dataset
+data_root/
+dataset/
+
+# Logs
+*.log
+*.txt.bak
+
+# IDE
+.vscode/
+.idea/
+
+# Misc
+*.mp4
+*.jpg
+*.png
+README_UPDATED.md
+setup.sh
+tools/monitor_extraction.py
+configs/
